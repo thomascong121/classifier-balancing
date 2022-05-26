@@ -91,7 +91,7 @@ class model ():
             self.log_file = None
         # Setup logger
         project_name = 'LT_cifar10'
-        run_name = 'Imb%d_Decouple_%s' % (int(self.training_opt['cifar_imb_ratio']), self.training_opt['rebalance'])
+        run_name = 'Imb%d_Decouple(LDAW)_%s_%s' % (int(self.training_opt['cifar_imb_ratio']), self.training_opt['rebalance'], str(self.training_opt['batch_size']))
         wandb_config = {'dataset': self.training_opt['dataset'], 'use_model': self.training_opt['backbone'],
                         'batch_size': self.training_opt['batch_size'], 'num_classes': self.training_opt['num_classes'], 'size': 32,
                         'imb_factor': self.training_opt['cifar_imb_ratio'], 'epochs': self.training_opt['num_epochs'],
