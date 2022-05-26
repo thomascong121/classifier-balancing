@@ -20,6 +20,20 @@ import torch.nn.functional as F
 import importlib
 import pdb
 
+def acc_per_class(output, target, stat_dict, top1=False):
+    with torch.no_grad():
+        batch_size = target.size(0)
+        if top1:
+            for i in range(len(target)):
+                if output[i] == target[i]:
+                    stat_dict[target[i].item()] += 1
+        else:
+            _, pred = output.topk(1, 1, True, True)
+            for i in range(len(target)):
+                if pred[i] == target[i]:
+                    stat_dict[target[i].item()] += 1
+        return stat_dict
+
 def source_import(file_path):
     """This function imports python module directly from source code using importlib"""
     spec = importlib.util.spec_from_file_location('', file_path)

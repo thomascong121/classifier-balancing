@@ -15,7 +15,7 @@ All rights reserved.
 import os
 import copy
 import pickle
-import torch
+import wandb
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
@@ -61,6 +61,7 @@ class model ():
             self.training_data_num = len(self.data['train'].dataset)
             self.epoch_steps = int(self.training_data_num  \
                                    / self.training_opt['batch_size'])
+            print('epochs steps ',self.epoch_steps)
 
             # Initialize model optimizer and scheduler
             print('Initializing model optimizer.')
@@ -88,6 +89,14 @@ class model ():
                         pickle.dump(cfeats, f)
                     self.networks['classifier'].update(cfeats)
             self.log_file = None
+        # Setup logger
+        project_name = 'LT_cifar10'
+        run_name = 'Imb%d_Decouple_%s' % (int(self.training_opt['cifar_imb_ratio']), self.training_opt['rebalance'])
+        wandb_config = {'dataset': self.training_opt['dataset'], 'use_model': self.training_opt['backbone'],
+                        'batch_size': self.training_opt['batch_size'], 'num_classes': self.training_opt['num_classes'], 'size': 32,
+                        'imb_factor': self.training_opt['cifar_imb_ratio'], 'epochs': self.training_opt['num_epochs'],
+                        'lr': self.config['networks']['classifier']['optim_params']['lr']}
+        wandb.init(project=project_name, name=run_name, config=wandb_config)
         
     def init_models(self, optimizer=True):
         networks_defs = self.config['networks']
@@ -260,7 +269,7 @@ class model ():
             total_preds = []
             total_labels = []
 
-            for step, (inputs, labels, indexes) in enumerate(self.data['train']):
+            for step, (inputs, labels, indexes) in tqdm(enumerate(self.data['train'])):
                 # Break when step equal to epoch step
                 if step == self.epoch_steps:
                     break
@@ -293,17 +302,17 @@ class model ():
                         minibatch_loss_total = self.loss.item()
                         minibatch_acc = mic_acc_cal(preds, labels)
 
-                        print_str = ['Epoch: [%d/%d]' 
-                                     % (epoch, self.training_opt['num_epochs']),
-                                     'Step: %5d' 
-                                     % (step),
-                                     'Minibatch_loss_feature: %.3f' 
-                                     % (minibatch_loss_feat) if minibatch_loss_feat else '',
-                                     'Minibatch_loss_performance: %.3f'
-                                     % (minibatch_loss_perf) if minibatch_loss_perf else '',
-                                     'Minibatch_accuracy_micro: %.3f'
-                                      % (minibatch_acc)]
-                        print_write(print_str, self.log_file)
+                        # print_str = ['Epoch: [%d/%d]'
+                        #              % (epoch, self.training_opt['num_epochs']),
+                        #              'Step: %5d'
+                        #              % (step),
+                        #              'Minibatch_loss_feature: %.3f'
+                        #              % (minibatch_loss_feat) if minibatch_loss_feat else '',
+                        #              'Minibatch_loss_performance: %.3f'
+                        #              % (minibatch_loss_perf) if minibatch_loss_perf else '',
+                        #              'Minibatch_accuracy_micro: %.3f'
+                        #               % (minibatch_acc)]
+                        # print_write(print_str, self.log_file)
 
                         loss_info = {
                             'Epoch': epoch,
@@ -314,6 +323,7 @@ class model ():
                         }
 
                         self.logger.log_loss(loss_info)
+                        wandb.log(loss_info)
 
                 # Update priority weights if using PrioritizedSampler
                 # if self.training_opt['sampler'] and \
@@ -339,9 +349,15 @@ class model ():
             # After every epoch, validation
             rsls = {'epoch': epoch}
             rsls_train = self.eval_with_preds(total_preds, total_labels)
-            rsls_eval = self.eval(phase='val')
+            rsls_eval, acc_per_class_count = self.eval(phase='val')
             rsls.update(rsls_train)
             rsls.update(rsls_eval)
+            acc_per_class_dct = {}
+            for class_n in range(len(acc_per_class_count)):
+                class_corr = acc_per_class_count[class_n]
+                acc_per_class_dct['test/Class %d' % class_n] = class_corr / 1000
+            wandb.log(acc_per_class_dct)
+            wandb.log(rsls)
 
             # Reset class weights for sampling if pri_mode is valid
             if hasattr(self.data['train'].sampler, 'reset_priority'):
@@ -454,6 +470,9 @@ class model ():
         get_feat_only = save_feat
         feats_all, labels_all, idxs_all, logits_all = [], [], [], []
         featmaps_all = []
+        stat_dct = {}
+        for i in range(self.training_opt['num_classes']):
+            stat_dct[i] = 0
         # Iterate over dataset
         for inputs, labels, paths in tqdm(self.data[phase]):
             inputs, labels = inputs.cuda(), labels.cuda()
@@ -504,6 +523,9 @@ class model ():
             print('\n\nOpenset Accuracy: %.3f' % self.openset_acc)
 
         # Calculate the overall accuracy and F measurement
+        stat_dct = acc_per_class(preds[self.total_labels != -1],
+                                 self.total_labels[self.total_labels != -1],
+                                 stat_dct, top1=True)
         self.eval_acc_mic_top1= mic_acc_cal(preds[self.total_labels != -1],
                                             self.total_labels[self.total_labels != -1])
         self.eval_f_measure = F_measure(preds, self.total_labels, openset=openset,
@@ -525,40 +547,40 @@ class model ():
                      '\n',
                      'Averaged F-measure: %.3f' 
                      % (self.eval_f_measure),
-                     '\n',
-                     'Many_shot_accuracy_top1: %.3f' 
-                     % (self.many_acc_top1),
-                     'Median_shot_accuracy_top1: %.3f' 
-                     % (self.median_acc_top1),
-                     'Low_shot_accuracy_top1: %.3f' 
-                     % (self.low_acc_top1),
+                     # '\n',
+                     # 'Many_shot_accuracy_top1: %.3f'
+                     # % (self.many_acc_top1),
+                     # 'Median_shot_accuracy_top1: %.3f'
+                     # % (self.median_acc_top1),
+                     # 'Low_shot_accuracy_top1: %.3f'
+                     # % (self.low_acc_top1),
                      '\n']
         
         rsl = {phase + '_all': self.eval_acc_mic_top1,
-               phase + '_many': self.many_acc_top1,
-               phase + '_median': self.median_acc_top1,
-               phase + '_low': self.low_acc_top1,
+               # phase + '_many': self.many_acc_top1,
+               # phase + '_median': self.median_acc_top1,
+               # phase + '_low': self.low_acc_top1,
                phase + '_fscore': self.eval_f_measure}
 
-        if phase == 'val':
-            print_write(print_str, self.log_file)
-        else:
-            acc_str = ["{:.1f} \t {:.1f} \t {:.1f} \t {:.1f}".format(
-                self.many_acc_top1 * 100,
-                self.median_acc_top1 * 100,
-                self.low_acc_top1 * 100,
-                self.eval_acc_mic_top1 * 100)]
-            if self.log_file is not None and os.path.exists(self.log_file):
-                print_write(print_str, self.log_file)
-                print_write(acc_str, self.log_file)
-            else:
-                print(*print_str)
-                print(*acc_str)
-        
+        # if phase == 'val':
+        #     print_write(print_str, self.log_file)
+        # else:
+        #     acc_str = ["{:.1f} \t {:.1f} \t {:.1f} \t {:.1f}".format(
+        #         self.many_acc_top1 * 100,
+        #         self.median_acc_top1 * 100,
+        #         self.low_acc_top1 * 100,
+        #         self.eval_acc_mic_top1 * 100)]
+        #     if self.log_file is not None and os.path.exists(self.log_file):
+        #         print_write(print_str, self.log_file)
+        #         print_write(acc_str, self.log_file)
+        #     else:
+        #         print(*print_str)
+        #         print(*acc_str)
+        print(*print_str)
         if phase == 'test':
             with open(os.path.join(self.training_opt['log_dir'], 'cls_accs.pkl'), 'wb') as f:
                 pickle.dump(self.cls_accs, f)
-        return rsl
+        return rsl, stat_dct
             
     def centroids_cal(self, data, save_all=False):
 

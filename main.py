@@ -23,7 +23,8 @@ from utils import source_import, get_value
 
 data_root = {'ImageNet': '/datasets01_101/imagenet_full_size/061417',
              'Places': '/datasets01_101/Places365/041019',
-             'iNaturalist18': '/checkpoint/bykang/iNaturalist18'}
+             'iNaturalist18': '/checkpoint/bykang/iNaturalist18',
+             'CIFAR10': '/scratch/sz65/cc0395/LT_ECCV/dataset/data'}
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--cfg', default=None, type=str)
@@ -120,7 +121,8 @@ if not test_mode:
                                     dataset=dataset, phase=split2phase(x), 
                                     batch_size=training_opt['batch_size'],
                                     sampler_dic=sampler_dic,
-                                    num_workers=training_opt['num_workers'])
+                                    num_workers=training_opt['num_workers'],
+                                    cifar_imb_ratio=training_opt['cifar_imb_ratio'] if 'cifar_imb_ratio' in training_opt else None)
             for x in splits}
 
     training_model = model(config, data, test=False)
@@ -153,7 +155,7 @@ else:
                                     sampler_dic=None, 
                                     test_open=test_open,
                                     num_workers=training_opt['num_workers'],
-                                    shuffle=False)
+                                    cifar_imb_ratio=training_opt['cifar_imb_ratio'] if 'cifar_imb_ratio' in training_opt else None)
             for x in splits}
     
     training_model = model(config, data, test=True)

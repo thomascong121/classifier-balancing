@@ -1,0 +1,42 @@
+coslr: true
+criterions:
+  PerformanceLoss:
+    def_file: ./loss/SoftmaxLoss.py
+    loss_params: {}
+    optim_params: null
+    weight: 1.0
+endlr: 0.0
+last: false
+memory: {centroids: false, init_centroids: false}
+model_dir: null
+networks:
+  classifier:
+    def_file: ./models/DotProductClassifier.py
+    optim_params: {lr: 0.1, momentum: 0.9, weight_decay: 0.0005}
+    params: {dataset: CIFAR10_LT, feat_dim: 64, log_dir: ./logs/CIFAR10_Imb10_LT/models/resnet32_uniform,
+      num_classes: 10, stage1_weights: false}
+  feat_model:
+    def_file: ./models/ResNet32Feature.py
+    fix: false
+    optim_params: {lr: 0.1, momentum: 0.9, weight_decay: 0.0005}
+    params: {dataset: CIFAR10_LT, dropout: null, log_dir: ./logs/CIFAR10_Imb10_LT/models/resnet32_uniform,
+      stage1_weights: false, use_fc: false, use_selfatt: false}
+shuffle: false
+training_opt:
+  backbone: resnet32
+  batch_size: 512
+  dataset: CIFAR10_LT
+  display_step: 10
+  feature_dim: 64
+  log_dir: ./logs/CIFAR10_Imb10_LT/models/resnet32_uniform
+  log_root: ./logs/CIFAR10_Imb10_LT
+  num_classes: 10
+  num_epochs: 100
+  num_workers: 12
+  open_threshold: 0.1
+  sampler: null
+  scheduler_params: {gamma: 0.1, step_size: 30}
+  stage: resnet32_uniform
+  sub_dir: models
+  cifar_imb_ratio: 10
+  rebalance: stage1_uniform

@@ -19,6 +19,7 @@ from torch.utils.data import Dataset, DataLoader, ConcatDataset
 from torchvision import transforms
 import os
 from PIL import Image
+from data.ImbalanceCIFAR import IMBALANCECIFAR10, IMBALANCECIFAR100
 
 # Image statistics
 RGB_statistics = {
@@ -91,7 +92,7 @@ class LT_Dataset(Dataset):
         return sample, label, index
 
 # Load datasets
-def load_data(data_root, dataset, phase, batch_size, sampler_dic=None, num_workers=4, test_open=False, shuffle=True):
+def load_data(data_root, dataset, phase, batch_size, sampler_dic=None, num_workers=4, test_open=False, shuffle=True, cifar_imb_ratio=None):
 
     if phase == 'train_plain':
         txt_split = 'train'
@@ -110,16 +111,26 @@ def load_data(data_root, dataset, phase, batch_size, sampler_dic=None, num_worke
         key = 'iNaturalist18'
     else:
         key = 'default'
-    rgb_mean, rgb_std = RGB_statistics[key]['mean'], RGB_statistics[key]['std']
 
-    if phase not in ['train', 'val']:
-        transform = get_data_transform('test', rgb_mean, rgb_std, key)
+    if dataset == 'CIFAR10_LT':
+        print('====> CIFAR10 Imbalance Ratio: ', cifar_imb_ratio)
+        set_ = IMBALANCECIFAR10(phase, imbalance_ratio=cifar_imb_ratio, root=data_root)
+        print(set_.img_num_per_cls)
+    elif dataset == 'CIFAR100_LT':
+        print('====> CIFAR100 Imbalance Ratio: ', cifar_imb_ratio)
+        set_ = IMBALANCECIFAR100(phase, imbalance_ratio=cifar_imb_ratio, root=data_root)
     else:
-        transform = get_data_transform(phase, rgb_mean, rgb_std, key)
+        rgb_mean, rgb_std = RGB_statistics[key]['mean'], RGB_statistics[key]['std']
+        if phase not in ['train', 'val']:
+            transform = get_data_transform('test', rgb_mean, rgb_std, key)
+        else:
+            transform = get_data_transform(phase, rgb_mean, rgb_std, key)
 
-    print('Use data transformation:', transform)
+        print('Use data transformation:', transform)
 
-    set_ = LT_Dataset(data_root, txt, transform)
+        set_ = LT_Dataset(data_root, txt, transform)
+
+
     print(len(set_))
     if phase == 'test' and test_open:
         open_txt = './data/%s/%s_open.txt'%(dataset, dataset)
